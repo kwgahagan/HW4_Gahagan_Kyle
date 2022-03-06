@@ -1,0 +1,86 @@
+---
+title: "STAA 566 Assignment 4"
+author: "Kyle Gahagan"
+output: html_document
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
+---
+I previously investigated how a movie's inflation-adjusted budget relates to its reception by the general audience (IMDb) and film critics (Metacritic). We saw that for the relationship between audience score and budget looks similar to a normal distribution. From 4 to 6.5 IMDb score you see a gradual increase in budget, but after around 7 you start to see the average budget start to decrease. For critic score the pattern in similar but much less pronounced in the center of critic scores. While this is a useful way to visualize, it would also be interesting to see a table of the data to look at as well. We can do things such as filtering, sorting out, and more. 
+
+As before, I will use two data sets from Kaggle. The first data set contains details on thousands of movies from IMDb in the last 40 years (1980-2020). The data can be accessed here: https://www.kaggle.com/danielgrijalvas/movies. In conjunction with the IMDb data set, I will also use a data set from Metacritic, one of the most popular websites for seeing critics' numerical scores of movies. This data set is referenced here: https://www.kaggle.com/miazhx/metacritic-movie-reviews. 
+
+First I will read in both data frames and use only the necessary columns from each one. I will then merge them by movie title, adjust the budget for inflation, and filter out any missing values: 
+
+```{r message = FALSE, warning = FALSE, results = 'hide'}
+# Use readr package to read in imdb and metacritic csv
+library(readr)
+imdb_data <- read_csv("imdb.csv")
+metacritic_data <- read_csv("metacritic.csv")
+
+# Use dplyr to select relevant columns and rename them for the imdb data
+library(dplyr)
+imdb_data <-  imdb_data %>%
+  select(name, year, score, budget) %>%
+  rename(title = name, imdb_score = score)
+
+# Use dplyr to select relevant columns and rename them for the meta data 
+metacritic_data <-  metacritic_data %>%
+  select(movie_title, metascore) %>%
+  rename(title = movie_title, meta_score = metascore)
+
+# Merge budget data with metacritic data by movie title
+# Name the merged data frame master_data
+master_data <- merge(imdb_data, metacritic_data, by = "title", all = T)
+
+# Drop duplicate movie titles so we can adjust for inflation
+master_data <- master_data[!duplicated(master_data$title), ]
+
+# Use priceR package to adjust movie budgets for inflation up to 2020
+# Note: We use 2020 since this was the last year for the IMDb dataset
+library(priceR)
+master_data$budget_adj <- adjust_for_inflation(
+  price = master_data$budget, 
+  from_date = master_data$year, 
+  country = "US", 
+  to_date = 2020)
+
+# Remove old budget variable and year now that we adjusted
+master_data <- master_data %>%
+  select(-budget, -year)
+
+# Filter out NAs in title, imdb_score, meta_score, and budget_adj
+master_data <- master_data %>%
+  filter(!is.na(title)) %>%
+  filter(!is.na(imdb_score)) %>%
+  filter(!is.na(meta_score)) %>%
+  filter(!is.na(budget_adj))
+
+# Reformat budget_adj so it outputs in the data table nicely
+master_data$budget_adj <- round(master_data$budget_adj / 1000000, 
+                                digits = 0)
+```
+
+Now we will use the `DT` package function `datatable` to make this table interactive:
+
+```{r message = FALSE, warning = FALSE, fig.height = 9, fig.width = 9}
+# Load appropriate packages
+library(DT)
+library(htmltools)
+library(htmlwidgets)
+
+# Use datatable function to make the table interactive
+datatable(master_data, 
+          caption = htmltools::tags$caption(style = 'caption-side: top;
+          text-align: center; color:black; font-size:150% ;',
+          'IMDb Score, Metacritic Score, and Adjusted Budget of Movies from 
+          1980 to 2020'),
+          rownames = FALSE,
+          colnames =  c("Title", 
+                        "IMDb Score", 
+                        "Metacritic Score",
+                        "Inflation-Adjusted Budget (Millions $USD)"), 
+          filter = "top")
+```
